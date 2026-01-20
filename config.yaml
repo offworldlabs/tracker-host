@@ -1,0 +1,38 @@
+# tracker-host configuration
+
+# Global settings
+output_dir: "./output"
+poll_interval_sec: 0.5
+status_interval_sec: 30.0
+
+# Path to retina-tracker (relative to tracker-host directory)
+retina_tracker_path: "../retina-tracker"
+
+# Retry/resilience settings
+retry:
+  max_attempts: 5              # Retries before considering "extended outage"
+  backoff_base_sec: 2          # Exponential backoff base (2s, 4s, 8s, 16s, 32s)
+  extended_outage_sec: 60      # Shutdown tracker after this duration of failures
+  health_check_interval_sec: 30 # How often to check if downed endpoint is back
+
+# Optional API forwarding (applied to all instances unless overridden)
+api_forward:
+  enabled: false
+  url: ""
+  # headers:
+  #   Authorization: "Bearer your-token"
+
+# Tracker instances - one per detection endpoint
+trackers:
+  - name: "radar3"
+    detection_url: "https://radar3.retnode.com/api/detection"
+    tcp_port: 30012
+    # Optional per-instance overrides:
+    # tracker_config: "./custom-tracker-config.yaml"
+    # api_forward:
+    #   enabled: true
+    #   url: "https://other-api.com/tracks"
+
+  - name: "radar4"
+    detection_url: "https://radar4.30hours.dev/api/detection"
+    tcp_port: 30013
