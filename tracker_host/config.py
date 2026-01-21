@@ -33,6 +33,8 @@ class TrackerConfig:
     name: str
     detection_url: str
     tcp_port: int
+    tcp_host: str = "127.0.0.1"
+    spawn_tracker: bool = True
     tracker_config: Optional[str] = None
     api_forward: Optional[ApiForwardConfig] = None
 
@@ -96,6 +98,8 @@ def _parse_config(raw: dict) -> Config:
                 name=t["name"],
                 detection_url=t["detection_url"],
                 tcp_port=t["tcp_port"],
+                tcp_host=t.get("tcp_host", "127.0.0.1"),
+                spawn_tracker=t.get("spawn_tracker", True),
                 tracker_config=t.get("tracker_config"),
                 api_forward=tracker_api,
             )

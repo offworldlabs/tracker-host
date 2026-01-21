@@ -10,7 +10,7 @@ from typing import Optional
 
 import aiohttp
 
-from .config import ApiForwardConfig, Config, RetryConfig, TrackerConfig
+from .config import Config, TrackerConfig
 from .fetcher import DetectionFetcher, ExtendedOutageError
 from .output_handler import OutputHandler
 
@@ -85,8 +85,9 @@ class TrackerInstance:
 
         logger.info(f"Starting tracker instance: {self.name}")
 
-        # Start the retina-tracker subprocess
-        await self._start_tracker_process()
+        # Start the retina-tracker subprocess (unless connecting to remote)
+        if self.config.spawn_tracker:
+            await self._start_tracker_process()
 
         # Connect to tracker via TCP
         await self._connect_to_tracker()
@@ -94,10 +95,10 @@ class TrackerInstance:
         self.state = InstanceState.RUNNING
 
         # Start background tasks
-        self._tasks = [
-            asyncio.create_task(self._fetch_loop(), name=f"{self.name}-fetch"),
-            asyncio.create_task(self._output_loop(), name=f"{self.name}-output"),
-        ]
+        tasks = [asyncio.create_task(self._fetch_loop(), name=f"{self.name}-fetch")]
+        if self.config.spawn_tracker:
+            tasks.append(asyncio.create_task(self._output_loop(), name=f"{self.name}-output"))
+        self._tasks = tasks
 
     async def stop(self) -> None:
         """Stop the tracker instance."""
@@ -122,8 +123,9 @@ class TrackerInstance:
         # Close TCP connection
         await self._close_tcp()
 
-        # Stop subprocess
-        await self._stop_tracker_process()
+        # Stop subprocess (if we spawned it)
+        if self.config.spawn_tracker:
+            await self._stop_tracker_process()
 
         # Close handlers
         await self.fetcher.close()
@@ -197,25 +199,25 @@ class TrackerInstance:
 
     async def _connect_to_tracker(self) -> None:
         """Connect to the tracker's TCP port."""
-        max_retries = 10
-        retry_delay = 0.5
+        max_retries = 30 if not self.config.spawn_tracker else 10
+        retry_delay = 1.0 if not self.config.spawn_tracker else 0.5
+        host = self.config.tcp_host
 
         for attempt in range(max_retries):
             try:
                 self._tcp_reader, self._tcp_writer = await asyncio.open_connection(
-                    "127.0.0.1", self.config.tcp_port
+                    host, self.config.tcp_port
                 )
-                logger.info(f"Connected to tracker TCP port {self.config.tcp_port}")
+                logger.info(f"Connected to tracker at {host}:{self.config.tcp_port}")
                 return
             except (ConnectionRefusedError, OSError) as e:
                 if attempt < max_retries - 1:
-                    logger.debug(
-                        f"TCP connection attempt {attempt + 1} failed: {e}, retrying..."
-                    )
+                    port = self.config.tcp_port
+                    logger.debug(f"TCP attempt {attempt + 1} to {host}:{port} failed: {e}, retrying...")
                     await asyncio.sleep(retry_delay)
                 else:
                     raise RuntimeError(
-                        f"Failed to connect to tracker after {max_retries} attempts"
+                        f"Failed to connect to tracker at {host}:{self.config.tcp_port} after {max_retries} attempts"
                     )
 
     async def _close_tcp(self) -> None:
@@ -242,9 +244,10 @@ class TrackerInstance:
                 logger.error(f"Extended outage for {self.name}, stopping tracker")
                 self.state = InstanceState.RECONNECTING
 
-                # Stop the tracker subprocess
+                # Stop the tracker subprocess (if we spawned it)
                 await self._close_tcp()
-                await self._stop_tracker_process()
+                if self.config.spawn_tracker:
+                    await self._stop_tracker_process()
 
                 # Clear metrics since tracker is down
                 self.output_handler.metrics.clear()
@@ -254,7 +257,8 @@ class TrackerInstance:
 
                 # Restart
                 logger.info(f"Restarting tracker for {self.name}")
-                await self._start_tracker_process()
+                if self.config.spawn_tracker:
+                    await self._start_tracker_process()
                 await self._connect_to_tracker()
                 self.state = InstanceState.RUNNING
 

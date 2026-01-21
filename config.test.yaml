@@ -1,0 +1,38 @@
+# Test configuration for tracker-host
+# Connects to synthetic-adsb for integration testing
+
+# Global settings
+output_dir: "./test_output"
+poll_interval_sec: 0.5
+status_interval_sec: 10.0
+
+# Path to retina-tracker (relative to tracker-host directory)
+retina_tracker_path: "../retina-tracker"
+
+# Retry/resilience settings (faster for testing)
+retry:
+  max_attempts: 3
+  backoff_base_sec: 1
+  extended_outage_sec: 30
+  health_check_interval_sec: 10
+
+# API forwarding disabled for testing
+api_forward:
+  enabled: false
+  url: ""
+
+# Tracker instances - connected to synthetic-adsb radar endpoints
+trackers:
+  - name: "synthetic-rx1"
+    detection_url: "http://localhost:49158/api/detection"
+    tcp_port: 30100
+    # Use test-specific tracker config
+    # tracker_config: "./tracker-config.test.yaml"
+
+  - name: "synthetic-rx2"
+    detection_url: "http://localhost:49159/api/detection"
+    tcp_port: 30101
+
+  - name: "synthetic-rx3"
+    detection_url: "http://localhost:49160/api/detection"
+    tcp_port: 30102
