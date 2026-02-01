@@ -31,6 +31,19 @@ def load_tracks(filepath):
             dopplers = [d["doppler"] for d in detections]
             snrs = [d["snr"] for d in detections]
 
+            # Extract ADS-B expected delay/doppler where available
+            adsb_delays = []
+            adsb_dopplers = []
+            for d in detections:
+                a = d.get("adsb")
+                if (
+                    a
+                    and a.get("expected_delay") is not None
+                    and a.get("expected_doppler") is not None
+                ):
+                    adsb_delays.append(a["expected_delay"])
+                    adsb_dopplers.append(a["expected_doppler"])
+
             # Keep latest (most complete) version of each track
             tracks[track_id] = {
                 "delays": delays,
@@ -38,6 +51,8 @@ def load_tracks(filepath):
                 "snrs": snrs,
                 "length": event.get("length", len(detections)),
                 "adsb_hex": event.get("adsb_hex"),
+                "adsb_delays": adsb_delays,
+                "adsb_dopplers": adsb_dopplers,
             }
 
     return tracks
@@ -71,6 +86,19 @@ def plot_tracks(tracks, output_file, min_length=3):
             label=label,
         )
 
+        # ADS-B expected delay/doppler as square markers
+        if data["adsb_delays"]:
+            ax.scatter(
+                data["adsb_delays"],
+                data["adsb_dopplers"],
+                c=[color] * len(data["adsb_delays"]),
+                s=30,
+                alpha=0.9,
+                marker="s",
+                edgecolors="black",
+                linewidths=0.5,
+            )
+
     # Styling
     ax.set_xlabel("Delay", fontsize=12)
     ax.set_ylabel("Doppler (Hz)", fontsize=12)
@@ -80,13 +108,13 @@ def plot_tracks(tracks, output_file, min_length=3):
     # Legend
     n_tracks = len(filtered)
     if 0 < n_tracks <= 15:
-        ax.legend(loc="upper right", fontsize=8, ncol=2)
+        ax.legend(loc="lower left", fontsize=8, ncol=2)
     elif n_tracks > 15:
         handles, labels = ax.get_legend_handles_labels()
         ax.legend(
             handles[:15],
             labels[:15],
-            loc="upper right",
+            loc="lower left",
             fontsize=8,
             ncol=2,
             title=f"Showing 15 of {n_tracks} tracks",
@@ -98,6 +126,8 @@ def plot_tracks(tracks, output_file, min_length=3):
 
 
 def main():
+    from .utils import increment_filename
+
     parser = argparse.ArgumentParser(description="Plot tracks from JSONL output")
     parser.add_argument("input", help="Input JSONL file")
     parser.add_argument("-o", "--output", default="tracks.png", help="Output PNG file")
@@ -105,6 +135,7 @@ def main():
         "--min-length", type=int, default=3, help="Minimum track length to display"
     )
     args = parser.parse_args()
+    args.output = increment_filename(args.output)
 
     tracks = load_tracks(args.input)
     print(f"Loaded {len(tracks)} tracks")

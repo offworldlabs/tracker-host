@@ -3,28 +3,20 @@
 import asyncio
 import json
 import logging
-import socket
+import sys
 from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
 
-from .config import ApiForwardConfig, Config, RetryConfig, TrackerConfig
+from .config import Config, TrackerConfig
 from .fetcher import DetectionFetcher, ExtendedOutageError
+from .geolocator import GeolocatorInstance
 from .output_handler import OutputHandler
+from .utils import check_port_available, connect_tcp, start_subprocess, stop_subprocess
 
 logger = logging.getLogger(__name__)
-
-
-def check_port_available(port: int, host: str = "127.0.0.1") -> bool:
-    """Check if a port is available for binding."""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-            return True
-    except OSError:
-        return False
 
 
 class InstanceState(Enum):
@@ -49,6 +41,7 @@ class TrackerInstance:
         self.global_config = global_config
         self.name = tracker_config.name
         self.state = InstanceState.STOPPED
+        self._session = session
 
         # Determine API forward config (per-instance overrides global)
         api_config = tracker_config.api_forward or global_config.api_forward
@@ -65,6 +58,17 @@ class TrackerInstance:
             api_config=api_config,
             session=session,
         )
+
+        # Geolocator (optional)
+        self.geolocator: Optional[GeolocatorInstance] = None
+        if tracker_config.geolocator is not None and tracker_config.geolocator.enabled:
+            self.geolocator = GeolocatorInstance(
+                name=self.name,
+                geo_config=tracker_config.geolocator,
+                global_config=global_config,
+                config_url=tracker_config.config_url,
+                session=session,
+            )
 
         # Subprocess
         self._process: Optional[asyncio.subprocess.Process] = None
@@ -91,6 +95,10 @@ class TrackerInstance:
         # Connect to tracker via TCP
         await self._connect_to_tracker()
 
+        # Start geolocator if configured
+        if self.geolocator is not None:
+            await self.geolocator.start()
+
         self.state = InstanceState.RUNNING
 
         # Start background tasks
@@ -98,6 +106,13 @@ class TrackerInstance:
             asyncio.create_task(self._fetch_loop(), name=f"{self.name}-fetch"),
             asyncio.create_task(self._output_loop(), name=f"{self.name}-output"),
         ]
+
+        if self.config.config_url:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._config_poll_loop(), name=f"{self.name}-config-poll"
+                )
+            )
 
     async def stop(self) -> None:
         """Stop the tracker instance."""
@@ -119,6 +134,10 @@ class TrackerInstance:
 
         self._tasks.clear()
 
+        # Stop geolocator first
+        if self.geolocator is not None:
+            await self.geolocator.stop()
+
         # Close TCP connection
         await self._close_tcp()
 
@@ -131,7 +150,6 @@ class TrackerInstance:
 
     async def _start_tracker_process(self) -> None:
         """Start the retina-tracker subprocess."""
-        # Check port availability before starting
         if not check_port_available(self.config.tcp_port):
             raise RuntimeError(
                 f"Port {self.config.tcp_port} is already in use. "
@@ -141,7 +159,7 @@ class TrackerInstance:
         tracker_path = Path(self.global_config.retina_tracker_path)
 
         cmd = [
-            "python",
+            sys.executable,
             "-m",
             "tracker.track_detections",
             "--tcp",
@@ -153,70 +171,30 @@ class TrackerInstance:
             "-",  # Stream output to stdout
         ]
 
-        # Add custom tracker config if specified
         if self.config.tracker_config:
             cmd.extend(["-c", self.config.tracker_config])
 
-        logger.info(f"Starting retina-tracker for {self.name}: {' '.join(cmd)}")
-
-        self._process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        self._process = await start_subprocess(
+            cmd,
             cwd=tracker_path,
+            startup_delay=self.global_config.startup_delay_sec,
+            label=f"retina-tracker for {self.name}",
         )
-
-        # Give it a moment to start up
-        await asyncio.sleep(1.0)
-
-        if self._process.returncode is not None:
-            stderr = await self._process.stderr.read()
-            raise RuntimeError(
-                f"Tracker process exited immediately: {stderr.decode()}"
-            )
-
-        logger.info(f"Tracker process started for {self.name} (PID: {self._process.pid})")
 
     async def _stop_tracker_process(self) -> None:
         """Stop the retina-tracker subprocess."""
-        if self._process is None:
-            return
-
-        if self._process.returncode is None:
-            logger.info(f"Terminating tracker process for {self.name}")
-            self._process.terminate()
-
-            try:
-                await asyncio.wait_for(self._process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning(f"Force killing tracker process for {self.name}")
-                self._process.kill()
-                await self._process.wait()
-
+        await stop_subprocess(self._process, label=f"tracker for {self.name}")
         self._process = None
 
     async def _connect_to_tracker(self) -> None:
         """Connect to the tracker's TCP port."""
-        max_retries = 10
-        retry_delay = 0.5
-
-        for attempt in range(max_retries):
-            try:
-                self._tcp_reader, self._tcp_writer = await asyncio.open_connection(
-                    "127.0.0.1", self.config.tcp_port
-                )
-                logger.info(f"Connected to tracker TCP port {self.config.tcp_port}")
-                return
-            except (ConnectionRefusedError, OSError) as e:
-                if attempt < max_retries - 1:
-                    logger.debug(
-                        f"TCP connection attempt {attempt + 1} failed: {e}, retrying..."
-                    )
-                    await asyncio.sleep(retry_delay)
-                else:
-                    raise RuntimeError(
-                        f"Failed to connect to tracker after {max_retries} attempts"
-                    )
+        self._tcp_reader, self._tcp_writer = await connect_tcp(
+            "127.0.0.1",
+            self.config.tcp_port,
+            max_retries=self.global_config.tcp_connect_retries,
+            retry_delay=self.global_config.tcp_retry_delay_sec,
+            label=f"tracker for {self.name}",
+        )
 
     async def _close_tcp(self) -> None:
         """Close the TCP connection."""
@@ -242,6 +220,10 @@ class TrackerInstance:
                 logger.error(f"Extended outage for {self.name}, stopping tracker")
                 self.state = InstanceState.RECONNECTING
 
+                # Stop geolocator
+                if self.geolocator is not None:
+                    await self.geolocator.stop()
+
                 # Stop the tracker subprocess
                 await self._close_tcp()
                 await self._stop_tracker_process()
@@ -256,6 +238,10 @@ class TrackerInstance:
                 logger.info(f"Restarting tracker for {self.name}")
                 await self._start_tracker_process()
                 await self._connect_to_tracker()
+
+                if self.geolocator is not None:
+                    await self.geolocator.start()
+
                 self.state = InstanceState.RUNNING
 
             except asyncio.CancelledError:
@@ -294,7 +280,12 @@ class TrackerInstance:
                 )
 
                 if line:
-                    await self.output_handler.handle_event(line.decode())
+                    decoded_line = line.decode()
+                    await self.output_handler.handle_event(decoded_line)
+
+                    # Forward track event to geolocator
+                    if self.geolocator is not None:
+                        await self.geolocator.send_track_event(decoded_line)
 
             except asyncio.TimeoutError:
                 continue
@@ -306,8 +297,59 @@ class TrackerInstance:
                 logger.error(f"Error reading tracker output for {self.name}: {e}")
                 await asyncio.sleep(0.1)
 
+    async def _config_poll_loop(self) -> None:
+        """Poll the radar node's config endpoint and restart on changes."""
+        baseline: Optional[str] = None
+
+        while self._running:
+            await asyncio.sleep(self.global_config.config_poll_interval_sec)
+
+            try:
+                async with self._session.get(self.config.config_url) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+
+                snapshot = json.dumps(data, sort_keys=True)
+
+                if baseline is None:
+                    baseline = snapshot
+                    logger.info(f"Config baseline captured for {self.name}")
+                elif snapshot != baseline:
+                    logger.warning(
+                        f"Config change detected for {self.name}, restarting tracker"
+                    )
+                    baseline = snapshot
+
+                    self.state = InstanceState.RECONNECTING
+
+                    if self.geolocator is not None:
+                        await self.geolocator.stop()
+
+                    await self._close_tcp()
+                    await self._stop_tracker_process()
+                    self.output_handler.metrics.clear()
+                    await self._start_tracker_process()
+                    await self._connect_to_tracker()
+
+                    if self.geolocator is not None:
+                        await self.geolocator.start()
+
+                    self.state = InstanceState.RUNNING
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception as e:
+                logger.warning(f"Config poll failed for {self.name}: {e}")
+
     def get_status(self) -> str:
         """Get status string for this instance."""
         state_str = self.state.name.lower()
         output_status = self.output_handler.get_status()
-        return f"[{state_str}] {output_status}"
+        status = f"[{state_str}] {output_status}"
+
+        if self.geolocator is not None:
+            geo_status = self.geolocator.get_status()
+            status += f" | geo: {geo_status}"
+
+        return status
