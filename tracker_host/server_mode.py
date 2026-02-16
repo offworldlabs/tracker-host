@@ -23,7 +23,7 @@ async def run_server(config_path: str, verbose: bool = False) -> None:
     )
 
     config = load_config(config_path)
-    registry = NodeRegistry(output_dir=config.output_dir)
+    registry = NodeRegistry(output_dir=config.output_dir, global_config=config)
     app = create_app(registry)
 
     runner = web.AppRunner(app)

@@ -13,6 +13,8 @@ class ServerConfig:
 
     host: str = "0.0.0.0"
     port: int = 8080
+    geolocator_enabled: bool = False
+    geolocator_tcp_port_base: int = 31000
 
 
 @dataclass
@@ -95,6 +97,8 @@ def _parse_config(raw: dict) -> Config:
     server = ServerConfig(
         host=server_raw.get("host", "0.0.0.0"),
         port=server_raw.get("port", 8080),
+        geolocator_enabled=server_raw.get("geolocator_enabled", False),
+        geolocator_tcp_port_base=server_raw.get("geolocator_tcp_port_base", 31000),
     )
 
     retry_raw = raw.get("retry", {})

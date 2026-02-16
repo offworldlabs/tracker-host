@@ -92,3 +92,18 @@ class TestServerConfig:
         config = _parse_config(raw)
         assert config.server.host == "127.0.0.1"
         assert config.server.port == 9090
+
+    def test_server_geolocator_defaults(self):
+        config = _parse_config({})
+        assert config.server.geolocator_enabled is False
+        assert config.server.geolocator_tcp_port_base == 31000
+
+    def test_server_geolocator_custom(self):
+        config = _parse_config({
+            "server": {
+                "geolocator_enabled": True,
+                "geolocator_tcp_port_base": 32000,
+            }
+        })
+        assert config.server.geolocator_enabled is True
+        assert config.server.geolocator_tcp_port_base == 32000
