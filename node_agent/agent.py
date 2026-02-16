@@ -5,11 +5,13 @@ import sys
 import urllib.error
 import urllib.request
 
+_HEADERS = {"User-Agent": "retina-node-agent/1.0"}
+
 
 def fetch_blah2_config(blah2_url: str) -> dict:
     """Fetch radar config from local blah2 API."""
     url = f"{blah2_url.rstrip('/')}/api/config"
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    req = urllib.request.Request(url, headers={**_HEADERS, "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read())
 
@@ -19,7 +21,7 @@ def push_config(server_url: str, node_name: str, config_data: dict) -> None:
     url = f"{server_url.rstrip('/')}/api/node/{node_name}/config"
     data = json.dumps(config_data).encode()
     req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}
+        url, data=data, headers={**_HEADERS, "Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
         resp.read()
@@ -32,7 +34,7 @@ def post_track_event(server_url: str, node_name: str, event_line: str) -> None:
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/x-ndjson"},
+        headers={**_HEADERS, "Content-Type": "application/x-ndjson"},
     )
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:

@@ -17,6 +17,8 @@ import time
 import urllib.error
 import urllib.request
 
+_HEADERS = {"User-Agent": "retina-node-agent/1.0"}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -65,7 +67,7 @@ def main() -> None:
             try:
                 req = urllib.request.Request(
                     args.detection_url,
-                    headers={"Accept": "application/json"},
+                    headers={**_HEADERS, "Accept": "application/json"},
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = resp.read()
