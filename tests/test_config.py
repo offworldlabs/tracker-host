@@ -2,7 +2,7 @@
 
 import yaml
 
-from tracker_host.config import Config, load_config, _parse_config
+from tracker_host.config import Config, ServerConfig, load_config, _parse_config
 
 
 class TestParseConfig:
@@ -79,3 +79,16 @@ class TestParseConfig:
         assert config.poll_interval_sec == 1.0
         assert config.startup_delay_sec == 2.5
         assert len(config.trackers) == 1
+
+
+class TestServerConfig:
+    def test_server_defaults(self):
+        config = _parse_config({})
+        assert config.server.host == "0.0.0.0"
+        assert config.server.port == 8080
+
+    def test_server_custom(self):
+        raw = {"server": {"host": "127.0.0.1", "port": 9090}}
+        config = _parse_config(raw)
+        assert config.server.host == "127.0.0.1"
+        assert config.server.port == 9090
