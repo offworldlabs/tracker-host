@@ -31,10 +31,25 @@ class TrackerConfig:
     """Configuration for a single tracker instance."""
 
     name: str
-    detection_url: str
     tcp_port: int
+    detection_url: Optional[str] = None
+    mode: Optional[str] = None
+    node_id: Optional[str] = None
     tracker_config: Optional[str] = None
     api_forward: Optional[ApiForwardConfig] = None
+
+
+@dataclass
+class TcpServerConfig:
+    """TCP push server configuration."""
+
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 30050
+    token: str = ""
+    auto_provision: bool = True
+    auto_provision_port_start: int = 31000
+    auto_provision_port_end: int = 31099
 
 
 @dataclass
@@ -46,6 +61,7 @@ class Config:
     status_interval_sec: float = 30.0
     retry: RetryConfig = field(default_factory=RetryConfig)
     api_forward: ApiForwardConfig = field(default_factory=ApiForwardConfig)
+    tcp_server: TcpServerConfig = field(default_factory=TcpServerConfig)
     trackers: list[TrackerConfig] = field(default_factory=list)
     retina_tracker_path: str = "../retina-tracker"
 
@@ -91,15 +107,40 @@ def _parse_config(raw: dict) -> Config:
                 headers=tapi.get("headers", {}),
             )
 
+        detection_url = t.get("detection_url")
+        explicit_mode = t.get("mode")
+
+        if explicit_mode is not None:
+            mode = explicit_mode
+        elif detection_url is not None:
+            mode = "http"
+        else:
+            mode = "tcp"
+
         trackers.append(
             TrackerConfig(
                 name=t["name"],
-                detection_url=t["detection_url"],
                 tcp_port=t["tcp_port"],
+                detection_url=detection_url,
+                mode=mode,
+                node_id=t.get("node_id"),
                 tracker_config=t.get("tracker_config"),
                 api_forward=tracker_api,
             )
         )
+
+    tcp_server_raw = raw.get("tcp_server", {})
+    tcp_server = TcpServerConfig(
+        enabled=tcp_server_raw.get("enabled", False),
+        host=tcp_server_raw.get("host", "0.0.0.0"),
+        port=tcp_server_raw.get("port", 30050),
+        token=tcp_server_raw.get("token", ""),
+        auto_provision=tcp_server_raw.get("auto_provision", True),
+        auto_provision_port_start=tcp_server_raw.get(
+            "auto_provision_port_start", 31000
+        ),
+        auto_provision_port_end=tcp_server_raw.get("auto_provision_port_end", 31099),
+    )
 
     return Config(
         output_dir=raw.get("output_dir", "./output"),
@@ -107,6 +148,7 @@ def _parse_config(raw: dict) -> Config:
         status_interval_sec=raw.get("status_interval_sec", 30.0),
         retry=retry,
         api_forward=api_forward,
+        tcp_server=tcp_server,
         trackers=trackers,
         retina_tracker_path=raw.get("retina_tracker_path", "../retina-tracker"),
     )

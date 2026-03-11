@@ -1,16 +1,18 @@
-"""TrackerInstance: manages one detection endpoint and one retina-tracker subprocess."""
+"""TrackerInstance: manages one detection source and one retina-tracker subprocess."""
 
 import asyncio
 import json
 import logging
 import socket
+import sys
 from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
 
-from .config import ApiForwardConfig, Config, RetryConfig, TrackerConfig
+from .config import Config, TrackerConfig
+from .detection_source import DetectionSource
 from .fetcher import DetectionFetcher, ExtendedOutageError
 from .output_handler import OutputHandler
 
@@ -43,6 +45,7 @@ class TrackerInstance:
         self,
         tracker_config: TrackerConfig,
         global_config: Config,
+        source: DetectionSource,
         session: Optional[aiohttp.ClientSession] = None,
     ):
         self.config = tracker_config
@@ -54,11 +57,7 @@ class TrackerInstance:
         api_config = tracker_config.api_forward or global_config.api_forward
 
         # Components
-        self.fetcher = DetectionFetcher(
-            url=tracker_config.detection_url,
-            retry_config=global_config.retry,
-            session=session,
-        )
+        self.source = source
         self.output_handler = OutputHandler(
             name=self.name,
             output_dir=global_config.output_dir,
@@ -126,7 +125,7 @@ class TrackerInstance:
         await self._stop_tracker_process()
 
         # Close handlers
-        await self.fetcher.close()
+        await self.source.close()
         await self.output_handler.close()
 
     async def _start_tracker_process(self) -> None:
@@ -141,7 +140,7 @@ class TrackerInstance:
         tracker_path = Path(self.global_config.retina_tracker_path)
 
         cmd = [
-            "python",
+            sys.executable,
             "-m",
             "tracker.track_detections",
             "--tcp",
@@ -171,11 +170,11 @@ class TrackerInstance:
 
         if self._process.returncode is not None:
             stderr = await self._process.stderr.read()
-            raise RuntimeError(
-                f"Tracker process exited immediately: {stderr.decode()}"
-            )
+            raise RuntimeError(f"Tracker process exited immediately: {stderr.decode()}")
 
-        logger.info(f"Tracker process started for {self.name} (PID: {self._process.pid})")
+        logger.info(
+            f"Tracker process started for {self.name} (PID: {self._process.pid})"
+        )
 
     async def _stop_tracker_process(self) -> None:
         """Stop the retina-tracker subprocess."""
@@ -233,7 +232,7 @@ class TrackerInstance:
         """Main loop: fetch detections and send to tracker."""
         while self._running:
             try:
-                data = await self.fetcher.fetch()
+                data = await self.source.receive()
 
                 if data is not None:
                     await self._send_to_tracker(data)
@@ -249,8 +248,9 @@ class TrackerInstance:
                 # Clear metrics since tracker is down
                 self.output_handler.metrics.clear()
 
-                # Wait for recovery
-                await self.fetcher.wait_for_recovery()
+                # Wait for recovery (only DetectionFetcher raises ExtendedOutageError)
+                if isinstance(self.source, DetectionFetcher):
+                    await self.source.wait_for_recovery()
 
                 # Restart
                 logger.info(f"Restarting tracker for {self.name}")

@@ -22,9 +22,21 @@ api_forward:
   # headers:
   #   Authorization: "Bearer your-token"
 
+# TCP push server
+tcp_server:
+  enabled: true
+  host: "0.0.0.0"
+  port: 30050
+  token: "shared-secret"
+  auto_provision: true
+  auto_provision_port_start: 31000
+  auto_provision_port_end: 31099    # max 100 auto-provisioned nodes
+
 # Tracker instances - one per detection endpoint
 trackers:
+  # HTTP-polled node (legacy, explicit opt-in)
   - name: "radar3"
+    mode: "http"
     detection_url: "https://radar3.retnode.com/api/detection"
     tcp_port: 30012
     # Optional per-instance overrides:
@@ -33,6 +45,11 @@ trackers:
     #   enabled: true
     #   url: "https://other-api.com/tracks"
 
+  # TCP-pushed node (explicit config with overrides)
   - name: "radar4"
-    detection_url: "https://radar4.30hours.dev/api/detection"
+    mode: "tcp"
+    node_id: "ret7dd2cb0d"
     tcp_port: 30013
+    # tracker_config: "./custom-radar4.yaml"
+
+  # Auto-provisioned nodes need no entry at all
