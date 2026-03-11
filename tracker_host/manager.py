@@ -102,10 +102,16 @@ class TrackerManager:
 
         logger.info(f"Starting {len(self._instances)} tracker instance(s)")
 
-        await asyncio.gather(
+        # Start all instances concurrently
+        results = await asyncio.gather(
             *(instance.start() for instance in self._instances),
             return_exceptions=True,
         )
+        for instance, result in zip(self._instances, results):
+            if isinstance(result, Exception):
+                logger.error(
+                    f"Failed to start instance {instance.name}: {result}"
+                )
 
         self._status_task = asyncio.create_task(self._status_loop(), name="status-loop")
 

@@ -8,6 +8,9 @@ status_interval_sec: 30.0
 # Path to retina-tracker (relative to tracker-host directory)
 retina_tracker_path: "../retina-tracker"
 
+# Path to retina-geolocator (relative to tracker-host directory)
+retina_geolocator_path: "../retina-geolocator"
+
 # Retry/resilience settings
 retry:
   max_attempts: 5              # Retries before considering "extended outage"
@@ -38,7 +41,11 @@ trackers:
   - name: "radar3"
     mode: "http"
     detection_url: "https://radar3.retnode.com/api/detection"
+    config_url: "https://radar3.retnode.com/api/config"
     tcp_port: 30012
+    geolocator:
+      enabled: true
+      tcp_port: 31012
     # Optional per-instance overrides:
     # tracker_config: "./custom-tracker-config.yaml"
     # api_forward:
@@ -50,6 +57,9 @@ trackers:
     mode: "tcp"
     node_id: "ret7dd2cb0d"
     tcp_port: 30013
+    geolocator:
+      enabled: true
+      tcp_port: 31013
     # tracker_config: "./custom-radar4.yaml"
 
   # Auto-provisioned nodes need no entry at all

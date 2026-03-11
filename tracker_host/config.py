@@ -27,6 +27,15 @@ class ApiForwardConfig:
 
 
 @dataclass
+class GeolocatorConfig:
+    """Configuration for a geolocator instance paired with a tracker."""
+
+    enabled: bool = False
+    tcp_port: int = 0
+    geolocator_config_path: Optional[str] = None
+
+
+@dataclass
 class TrackerConfig:
     """Configuration for a single tracker instance."""
 
@@ -36,7 +45,9 @@ class TrackerConfig:
     mode: Optional[str] = None
     node_id: Optional[str] = None
     tracker_config: Optional[str] = None
+    config_url: Optional[str] = None
     api_forward: Optional[ApiForwardConfig] = None
+    geolocator: Optional[GeolocatorConfig] = None
 
 
 @dataclass
@@ -59,11 +70,17 @@ class Config:
     output_dir: str = "./output"
     poll_interval_sec: float = 0.5
     status_interval_sec: float = 30.0
+    startup_delay_sec: float = 1.0
+    geolocator_startup_delay_sec: float = 2.0
+    tcp_connect_retries: int = 10
+    tcp_retry_delay_sec: float = 0.5
+    config_poll_interval_sec: float = 60.0
     retry: RetryConfig = field(default_factory=RetryConfig)
     api_forward: ApiForwardConfig = field(default_factory=ApiForwardConfig)
     tcp_server: TcpServerConfig = field(default_factory=TcpServerConfig)
     trackers: list[TrackerConfig] = field(default_factory=list)
     retina_tracker_path: str = "../retina-tracker"
+    retina_geolocator_path: str = "../retina-geolocator"
 
 
 def load_config(config_path: str | Path) -> Config:
@@ -117,6 +134,15 @@ def _parse_config(raw: dict) -> Config:
         else:
             mode = "tcp"
 
+        tracker_geo = None
+        if "geolocator" in t:
+            tgeo = t["geolocator"]
+            tracker_geo = GeolocatorConfig(
+                enabled=tgeo.get("enabled", False),
+                tcp_port=tgeo.get("tcp_port", 0),
+                geolocator_config_path=tgeo.get("geolocator_config_path"),
+            )
+
         trackers.append(
             TrackerConfig(
                 name=t["name"],
@@ -125,7 +151,9 @@ def _parse_config(raw: dict) -> Config:
                 mode=mode,
                 node_id=t.get("node_id"),
                 tracker_config=t.get("tracker_config"),
+                config_url=t.get("config_url"),
                 api_forward=tracker_api,
+                geolocator=tracker_geo,
             )
         )
 
@@ -146,9 +174,17 @@ def _parse_config(raw: dict) -> Config:
         output_dir=raw.get("output_dir", "./output"),
         poll_interval_sec=raw.get("poll_interval_sec", 0.5),
         status_interval_sec=raw.get("status_interval_sec", 30.0),
+        startup_delay_sec=raw.get("startup_delay_sec", 1.0),
+        geolocator_startup_delay_sec=raw.get("geolocator_startup_delay_sec", 2.0),
+        tcp_connect_retries=raw.get("tcp_connect_retries", 10),
+        tcp_retry_delay_sec=raw.get("tcp_retry_delay_sec", 0.5),
+        config_poll_interval_sec=raw.get("config_poll_interval_sec", 60.0),
         retry=retry,
         api_forward=api_forward,
         tcp_server=tcp_server,
         trackers=trackers,
         retina_tracker_path=raw.get("retina_tracker_path", "../retina-tracker"),
+        retina_geolocator_path=raw.get(
+            "retina_geolocator_path", "../retina-geolocator"
+        ),
     )
