@@ -168,7 +168,9 @@ class OutputHandler:
         if count == 0:
             return f"{self.name}: no active tracks"
 
-        lengths_str = ", ".join(str(l) for l in sorted(lengths, reverse=True)[:10])
+        lengths_str = ", ".join(
+            str(length) for length in sorted(lengths, reverse=True)[:10]
+        )
         if count > 10:
             lengths_str += f", ... ({count - 10} more)"
 

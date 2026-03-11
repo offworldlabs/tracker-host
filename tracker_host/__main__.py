@@ -41,7 +41,9 @@ Examples:
     config_path = Path(args.config)
     if not config_path.exists():
         print(f"Error: Config file not found: {config_path}", file=sys.stderr)
-        print("Create a config.yaml or specify a different path with -c", file=sys.stderr)
+        print(
+            "Create a config.yaml or specify a different path with -c", file=sys.stderr
+        )
         sys.exit(1)
 
     # Run the manager

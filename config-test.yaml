@@ -1,0 +1,26 @@
+# Test config - TCP push only, no HTTP trackers
+output_dir: "./output"
+poll_interval_sec: 0.5
+status_interval_sec: 10.0
+retina_tracker_path: "../retina-tracker"
+
+retry:
+  max_attempts: 5
+  backoff_base_sec: 2
+  extended_outage_sec: 60
+  health_check_interval_sec: 30
+
+api_forward:
+  enabled: false
+
+tcp_server:
+  enabled: true
+  host: "0.0.0.0"
+  port: 30050
+  token: "shared-secret"
+  auto_provision: true
+  auto_provision_port_start: 31000
+  auto_provision_port_end: 31099
+
+# No pre-configured trackers - rely entirely on auto-provisioning
+trackers: []

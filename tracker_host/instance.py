@@ -1,4 +1,4 @@
-"""TrackerInstance: manages one detection endpoint and one retina-tracker subprocess."""
+"""TrackerInstance: manages one detection source and one retina-tracker subprocess."""
 
 import asyncio
 import json
@@ -11,6 +11,7 @@ from typing import Optional
 import aiohttp
 
 from .config import Config, TrackerConfig
+from .detection_source import DetectionSource
 from .fetcher import DetectionFetcher, ExtendedOutageError
 from .geolocator import GeolocatorInstance
 from .output_handler import OutputHandler
@@ -35,6 +36,7 @@ class TrackerInstance:
         self,
         tracker_config: TrackerConfig,
         global_config: Config,
+        source: DetectionSource,
         session: Optional[aiohttp.ClientSession] = None,
     ):
         self.config = tracker_config
@@ -47,11 +49,7 @@ class TrackerInstance:
         api_config = tracker_config.api_forward or global_config.api_forward
 
         # Components
-        self.fetcher = DetectionFetcher(
-            url=tracker_config.detection_url,
-            retry_config=global_config.retry,
-            session=session,
-        )
+        self.source = source
         self.output_handler = OutputHandler(
             name=self.name,
             output_dir=global_config.output_dir,
@@ -145,7 +143,7 @@ class TrackerInstance:
         await self._stop_tracker_process()
 
         # Close handlers
-        await self.fetcher.close()
+        await self.source.close()
         await self.output_handler.close()
 
     async def _start_tracker_process(self) -> None:
@@ -211,7 +209,7 @@ class TrackerInstance:
         """Main loop: fetch detections and send to tracker."""
         while self._running:
             try:
-                data = await self.fetcher.fetch()
+                data = await self.source.receive()
 
                 if data is not None:
                     await self._send_to_tracker(data)
@@ -231,8 +229,9 @@ class TrackerInstance:
                 # Clear metrics since tracker is down
                 self.output_handler.metrics.clear()
 
-                # Wait for recovery
-                await self.fetcher.wait_for_recovery()
+                # Wait for recovery (only DetectionFetcher raises ExtendedOutageError)
+                if isinstance(self.source, DetectionFetcher):
+                    await self.source.wait_for_recovery()
 
                 # Restart
                 logger.info(f"Restarting tracker for {self.name}")

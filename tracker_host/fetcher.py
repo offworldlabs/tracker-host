@@ -63,7 +63,11 @@ class DetectionFetcher:
             await self._session.close()
             self._session = None
 
-    async def fetch(self) -> Optional[dict[str, Any]]:
+    @property
+    def is_healthy(self) -> bool:
+        return self.state.is_healthy
+
+    async def receive(self) -> Optional[dict[str, Any]]:
         """
         Fetch detection data from the endpoint.
 
@@ -119,7 +123,7 @@ class DetectionFetcher:
 
         # Calculate backoff delay
         backoff = min(
-            self.retry_config.backoff_base_sec ** self.state.consecutive_failures,
+            self.retry_config.backoff_base_sec**self.state.consecutive_failures,
             30.0,  # Cap at 30 seconds
         )
 
