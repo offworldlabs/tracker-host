@@ -1,5 +1,12 @@
 # tracker-host configuration
 
+# Server mode settings (used with --server flag)
+server:
+  host: "0.0.0.0"
+  port: 8080
+  geolocator_enabled: false
+  geolocator_tcp_port_base: 31000
+
 # Global settings
 output_dir: "./output"
 poll_interval_sec: 0.5

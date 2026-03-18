@@ -117,6 +117,9 @@ class GeolocatorInstance:
 
     async def _fetch_radar_config(self) -> None:
         """Fetch the radar's config from its config_url and save to a temp file."""
+        if self._radar_config_path:
+            return  # Config already provided externally
+
         if not self.config_url:
             raise RuntimeError(
                 f"No config_url for {self.name}, required for geolocator"

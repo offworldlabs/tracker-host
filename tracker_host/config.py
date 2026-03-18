@@ -8,6 +8,16 @@ import yaml
 
 
 @dataclass
+class ServerConfig:
+    """HTTP server configuration for receiving track events from nodes."""
+
+    host: str = "0.0.0.0"
+    port: int = 8080
+    geolocator_enabled: bool = False
+    geolocator_tcp_port_base: int = 31000
+
+
+@dataclass
 class RetryConfig:
     """Retry and resilience settings."""
 
@@ -75,6 +85,7 @@ class Config:
     tcp_connect_retries: int = 10
     tcp_retry_delay_sec: float = 0.5
     config_poll_interval_sec: float = 60.0
+    server: ServerConfig = field(default_factory=ServerConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     api_forward: ApiForwardConfig = field(default_factory=ApiForwardConfig)
     tcp_server: TcpServerConfig = field(default_factory=TcpServerConfig)
@@ -98,6 +109,14 @@ def load_config(config_path: str | Path) -> Config:
 
 def _parse_config(raw: dict) -> Config:
     """Parse raw YAML dict into Config dataclass."""
+    server_raw = raw.get("server", {})
+    server = ServerConfig(
+        host=server_raw.get("host", "0.0.0.0"),
+        port=server_raw.get("port", 8080),
+        geolocator_enabled=server_raw.get("geolocator_enabled", False),
+        geolocator_tcp_port_base=server_raw.get("geolocator_tcp_port_base", 31000),
+    )
+
     retry_raw = raw.get("retry", {})
     retry = RetryConfig(
         max_attempts=retry_raw.get("max_attempts", 5),
@@ -171,6 +190,7 @@ def _parse_config(raw: dict) -> Config:
     )
 
     return Config(
+        server=server,
         output_dir=raw.get("output_dir", "./output"),
         poll_interval_sec=raw.get("poll_interval_sec", 0.5),
         status_interval_sec=raw.get("status_interval_sec", 30.0),
